@@ -1,8 +1,3 @@
-mod connection;
-mod event;
-mod server_net;
-mod wrap_net;
-
 use crate::{
     config,
     rabbit_digger::{RabbitDigger, RabbitDiggerBuilder},
@@ -27,6 +22,12 @@ use tokio::{
     task::spawn,
     time::sleep,
 };
+
+mod connection;
+mod event;
+mod merge;
+mod server_net;
+mod wrap_net;
 
 pub struct OnceConfigStopper {
     tx: oneshot::Sender<()>,

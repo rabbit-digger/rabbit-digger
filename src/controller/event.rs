@@ -40,3 +40,19 @@ impl Event {
         }
     }
 }
+
+impl EventType {
+    pub fn mergeable(&self) -> bool {
+        match self {
+            EventType::Inbound(_) | EventType::Outbound(_) => true,
+            _ => false,
+        }
+    }
+    pub fn mergeable_index(&self) -> usize {
+        match self {
+            EventType::Inbound(_) => 1,
+            EventType::Outbound(_) => 2,
+            _ => 0,
+        }
+    }
+}
