@@ -3,14 +3,17 @@ use std::{collections::BTreeMap, fmt};
 use crate::builtin::load_builtin;
 use crate::config;
 use crate::controller;
+use crate::rabbit_digger::running::RunningNet;
 use crate::registry::Registry;
 use crate::util::topological_sort;
 use anyhow::{anyhow, Context, Result};
-use config::AllNet;
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
 use rd_interface::config::EmptyConfig;
+use rd_interface::IntoDyn;
 use rd_interface::{Arc, Net, Server, Value};
 use rd_std::builtin::local::LocalNetConfig;
+
+mod running;
 
 pub type PluginLoader =
     Arc<dyn Fn(&config::Config, &mut Registry) -> Result<()> + Send + Sync + 'static>;
@@ -71,10 +74,6 @@ impl RabbitDiggerBuilder {
         ctl: &controller::Controller,
         config: config::Config,
     ) -> Result<RabbitDigger> {
-        let wrap_net = {
-            let c = ctl.clone();
-            move |net_name: String, net: Net| c.get_net(net_name, net)
-        };
         let wrap_server_net = {
             let c = ctl.clone();
             move |net: Net| c.get_server_net(net)
@@ -85,13 +84,7 @@ impl RabbitDiggerBuilder {
         (self.plugin_loader)(&config, &mut registry).context("Failed to load plugin")?;
         tracing::debug!("Registry:\n{}", registry);
 
-        let all_net = config
-            .net
-            .iter()
-            .map(|(k, v)| (k.to_string(), AllNet::Net(v.clone())))
-            .collect();
-        let nets = build_net(&registry, all_net, &config.server, wrap_net)
-            .context("Failed to build net")?;
+        let nets = build_net(&registry, config.net.clone()).context("Failed to build net")?;
         let servers = build_server(&registry, &nets, &config.server, wrap_server_net)
             .context("Failed to build server")?;
         tracing::debug!(
@@ -145,60 +138,48 @@ impl<'a> fmt::Display for ServerList<'a> {
 
 fn build_net(
     registry: &Registry,
-    mut all_net: BTreeMap<String, config::AllNet>,
-    server: &config::ConfigServer,
-    wrapper: impl Fn(String, Net) -> Net,
+    mut all_net: BTreeMap<String, config::Net>,
 ) -> Result<BTreeMap<String, Net>> {
     let mut net_map: BTreeMap<String, Net> = BTreeMap::new();
+    let mut running_map: BTreeMap<String, RunningNet> = BTreeMap::new();
 
     if !all_net.contains_key("noop") {
         all_net.insert(
             "noop".to_string(),
-            AllNet::Net(config::Net::new_opt("noop", EmptyConfig::default())?),
+            config::Net::new_opt("noop", EmptyConfig::default())?,
         );
     }
     if !all_net.contains_key("local") {
         all_net.insert(
             "local".to_string(),
-            AllNet::Net(config::Net::new_opt("local", LocalNetConfig::default())?),
+            config::Net::new_opt("local", LocalNetConfig::default())?,
         );
     }
 
-    all_net.insert(
-        "_".to_string(),
-        AllNet::Root(
-            server
-                .values()
-                .flat_map(|i| vec![i.net.clone(), i.listen.clone()])
-                .collect(),
-        ),
-    );
-
     let all_net = topological_sort(all_net, |k, n| {
-        n.get_dependency(registry)
+        registry
+            .get_net(&n.net_type)?
+            .resolver
+            .get_dependency(n.opt.clone())
             .context(format!("Failed to get_dependency for net/server: {}", k))
     })
     .context("Failed to do topological_sort")?
     .ok_or_else(|| anyhow!("There is cyclic dependencies in net",))?;
 
     for (name, i) in all_net {
-        match i {
-            AllNet::Net(i) => {
-                let load_net = || -> Result<()> {
-                    let net_item = registry.get_net(&i.net_type)?;
+        let load_net = || -> Result<()> {
+            let net_item = registry.get_net(&i.net_type)?;
 
-                    let net = net_item.build(&net_map, i.opt).context(format!(
-                        "Failed to build net {:?}. Please check your config.",
-                        name
-                    ))?;
-                    let net = wrapper(name.to_string(), net);
-                    net_map.insert(name.to_string(), net);
-                    Ok(())
-                };
-                load_net().context(format!("Loading net {}", name))?;
-            }
-            AllNet::Root(_) => {}
-        }
+            let net = net_item.build(&net_map, i.opt).context(format!(
+                "Failed to build net {:?}. Please check your config.",
+                name
+            ))?;
+            let net = RunningNet::new(name.to_string(), net);
+            net_map.insert(name.to_string(), net.clone().into_dyn());
+            running_map.insert(name.to_string(), net);
+            Ok(())
+        };
+        load_net().context(format!("Loading net {}", name))?;
     }
 
     Ok(net_map)
