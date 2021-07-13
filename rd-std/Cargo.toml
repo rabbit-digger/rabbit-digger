@@ -25,9 +25,10 @@ socks5-protocol = "0.3.2"
 http = { version = "0.2.4", optional = true }
 hyper = { version = "0.14.7", features = ["http1", "client", "server"] }
 
-# redir
+# transparent
 libc = "0.2.91"
 socket2 = "0.4.0"
+cfg-if = "1.0"
 
 # rule
 smoltcp = "0.7.0"
