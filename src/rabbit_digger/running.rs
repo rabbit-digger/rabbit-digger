@@ -7,12 +7,9 @@ use std::{
 
 use rd_interface::{
     async_trait, Address, Arc, AsyncRead, AsyncWrite, Context, INet, IntoDyn, Net, ReadBuf, Result,
-    Server, TcpListener, TcpStream, UdpSocket, Value,
+    TcpListener, TcpStream, UdpSocket, Value,
 };
-use tokio::{
-    sync::{Mutex, RwLock},
-    task::JoinHandle,
-};
+use tokio::{sync::RwLock, task::JoinHandle};
 
 use crate::Registry;
 
@@ -201,7 +198,7 @@ pub struct RunningServer {
     opt: Value,
     net: Net,
     listen: Net,
-    state: Arc<Mutex<State>>,
+    state: Arc<RwLock<State>>,
 }
 
 impl RunningServer {
@@ -211,15 +208,33 @@ impl RunningServer {
             opt,
             net,
             listen,
-            state: Arc::new(Mutex::new(State::WaitConfig)),
+            state: Arc::new(RwLock::new(State::WaitConfig)),
         }
     }
-    pub fn build(&self, registry: &Registry) -> anyhow::Result<Server> {
+    pub async fn start(&self, registry: &Registry) -> anyhow::Result<()> {
+        self.stop().await?;
+
         let item = registry.get_server(&self.name)?;
         let server = item.build(self.listen.clone(), self.net.clone(), self.opt.clone())?;
-        Ok(server)
+        let handle = tokio::spawn(async move { server.start().await.map_err(Into::into) });
+
+        *self.state.write().await = State::Running { handle };
+
+        Ok(())
     }
     pub async fn stop(&self) -> anyhow::Result<()> {
+        match &*self.state.read().await {
+            State::WaitConfig => {}
+            State::Running { handle } => {
+                handle.abort();
+            }
+        };
+
+        *self.state.write().await = State::WaitConfig;
+
+        Ok(())
+    }
+    pub async fn join(&self) -> anyhow::Result<()> {
         Ok(())
     }
 }

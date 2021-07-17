@@ -12,7 +12,7 @@ use futures::{stream::FuturesUnordered, FutureExt, StreamExt};
 use rd_interface::{config::EmptyConfig, Arc, IntoDyn, Net, Value};
 use rd_std::builtin::local::LocalNetConfig;
 use tokio::{
-    sync::{broadcast, mpsc},
+    sync::{broadcast, mpsc, Mutex, RwLock},
     time::sleep,
 };
 
@@ -44,7 +44,7 @@ enum State {
 }
 
 struct Inner {
-    state: State,
+    state: RwLock<State>,
     conn_cfg: ConnectionConfig,
 }
 
@@ -92,7 +92,7 @@ impl RabbitDigger {
         tokio::spawn(Self::recv_event(event_receiver, sender));
 
         let inner = Inner {
-            state: State::WaitConfig,
+            state: RwLock::new(State::WaitConfig),
             conn_cfg: ConnectionConfig::new(event_sender),
         };
 
@@ -105,7 +105,7 @@ impl RabbitDigger {
     async fn update_config(&self, config: config::Config) -> Result<()> {
         let inner = &self.inner;
 
-        match &inner.state {
+        match &*inner.state.read().await {
             State::WaitConfig => {}
             State::Running { servers, .. } => {
                 for i in servers.values() {
@@ -133,46 +133,70 @@ impl RabbitDigger {
         tracing::info!("Server:\n{}", ServerList(&servers));
         // TODO
         for (name, server) in &servers {
-            tokio::spawn(async move {});
+            server.server.start(&registry).await?;
         }
 
         Ok(())
     }
-    async fn new_running(
-        config: config::Config,
-        plugin_loader: &PluginLoader,
-    ) -> Result<RabbitDigger> {
-        let rd = RabbitDigger::new(plugin_loader).await?;
-        rd.update_config(config).await?;
-        Ok(rd)
-    }
-    // run all server, return if all server are exited.
-    pub async fn run(&self) -> Result<()> {
-        let mut server_tasks: FuturesUnordered<_> = self
-            .servers
-            .iter()
-            .map(|(name, i)| {
-                let name = name.clone();
-                let i = i.clone();
-                async move {
-                    let server = i.server.build(&registry).context(format!(
-                        "Failed to build server {:?}. Please check your config.",
-                        name
-                    ));
-                    let r = match server {
-                        Ok(server) => server.start().await.map_err(anyhow::Error::from),
-                        Err(e) => Err(e),
-                    };
-                    (name, r)
-                }
-            })
-            .collect();
+    pub async fn stop(&self) -> Result<()> {
+        let inner = &self.inner;
 
-        while let Some((name, r)) = server_tasks.next().await {
-            tracing::info!("Server {} is stopped. Return: {:?}", name, r)
+        {
+            match &*inner.state.read().await {
+                State::WaitConfig => {}
+                State::Running { servers, .. } => {
+                    for i in servers.values() {
+                        i.server.stop().await?;
+                    }
+                }
+            };
         }
 
-        tracing::info!("all servers are down, exit.");
+        *inner.state.write().await = State::WaitConfig;
+
+        Ok(())
+    }
+    pub async fn join(&self) -> Result<()> {
+        let inner = &self.inner;
+
+        match &*inner.state.read().await {
+            State::WaitConfig => {}
+            State::Running { servers, .. } => {
+                for i in servers.values() {
+                    i.server.join().await?;
+                }
+            }
+        };
+
+        Ok(())
+    }
+    // start all server, all server run in background.
+    pub async fn start(&self) -> Result<()> {
+        // let mut server_tasks: FuturesUnordered<_> = self
+        //     .servers
+        //     .iter()
+        //     .map(|(name, i)| {
+        //         let name = name.clone();
+        //         let i = i.clone();
+        //         async move {
+        //             let server = i.server.build(&registry).context(format!(
+        //                 "Failed to build server {:?}. Please check your config.",
+        //                 name
+        //             ));
+        //             let r = match server {
+        //                 Ok(server) => server.start().await.map_err(anyhow::Error::from),
+        //                 Err(e) => Err(e),
+        //             };
+        //             (name, r)
+        //         }
+        //     })
+        //     .collect();
+
+        // while let Some((name, r)) = server_tasks.next().await {
+        //     tracing::info!("Server {} is stopped. Return: {:?}", name, r)
+        // }
+
+        // tracing::info!("all servers are down, exit.");
         Ok(())
     }
 }
@@ -189,8 +213,9 @@ impl RabbitDiggerBuilder {
             plugin_loader: Arc::new(|_, _| Ok(())),
         }
     }
-    pub async fn build(&self, config: config::Config) -> Result<RabbitDigger> {
-        RabbitDigger::new(config, &self.plugin_loader).await
+    pub async fn build(&self) -> Result<RabbitDigger> {
+        let rd = RabbitDigger::new(&self.plugin_loader).await?;
+        Ok(rd)
     }
 }
 
