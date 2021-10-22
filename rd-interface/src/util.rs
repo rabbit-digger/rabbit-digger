@@ -161,5 +161,5 @@ pub fn resolve_mapped_socket_addr(addr: SocketAddr) -> SocketAddr {
         }
     }
 
-    return addr;
+    addr
 }
