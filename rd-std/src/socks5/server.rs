@@ -113,7 +113,8 @@ impl Socks5Server {
                 let socket = rx.unsplit(tx.into_inner());
 
                 let udp_channel = Socks5UdpSocket(udp, socket, RwLock::new(None));
-                connect_udp(ctx, udp_channel.into_dyn(), out).await?;
+                // TODO: udp
+                // connect_udp(ctx, udp_channel.into_dyn(), out).await?;
             }
             _ => {
                 return Ok(());
@@ -131,39 +132,39 @@ impl Socks5Server {
 
 pub struct Socks5UdpSocket(UdpSocket, TcpStream, RwLock<Option<SocketAddr>>);
 
-#[async_trait]
-impl IUdpChannel for Socks5UdpSocket {
-    async fn recv_send_to(&self, buf: &mut [u8]) -> Result<(usize, rd_interface::Address)> {
-        // 259 is max size of address, atype 1 + domain len 1 + domain 255 + port 2
-        let bytes_size = 259 + buf.len();
-        let mut bytes = vec![0u8; bytes_size];
-        let (recv_len, from_addr) = self.0.recv_from(&mut bytes).await?;
-        let saved_addr = { *self.2.read() };
-        if saved_addr.is_none() {
-            *self.2.write() = Some(from_addr);
-        }
-        bytes.truncate(recv_len);
+// #[async_trait]
+// impl IUdpChannel for Socks5UdpSocket {
+//     async fn recv_send_to(&self, buf: &mut [u8]) -> Result<(usize, rd_interface::Address)> {
+//         // 259 is max size of address, atype 1 + domain len 1 + domain 255 + port 2
+//         let bytes_size = 259 + buf.len();
+//         let mut bytes = vec![0u8; bytes_size];
+//         let (recv_len, from_addr) = self.0.recv_from(&mut bytes).await?;
+//         let saved_addr = { *self.2.read() };
+//         if saved_addr.is_none() {
+//             *self.2.write() = Some(from_addr);
+//         }
+//         bytes.truncate(recv_len);
 
-        let (addr, payload) = parse_udp(&bytes).await?;
-        let to_copy = payload.len().min(buf.len());
-        buf[..to_copy].copy_from_slice(&payload[..to_copy]);
+//         let (addr, payload) = parse_udp(&bytes).await?;
+//         let to_copy = payload.len().min(buf.len());
+//         buf[..to_copy].copy_from_slice(&payload[..to_copy]);
 
-        Ok((to_copy, sa2ra(addr)))
-    }
+//         Ok((to_copy, sa2ra(addr)))
+//     }
 
-    async fn send_recv_from(&self, buf: &[u8], addr: SocketAddr) -> Result<usize> {
-        let saddr: Address = addr.into();
+//     async fn send_recv_from(&self, buf: &[u8], addr: SocketAddr) -> Result<usize> {
+//         let saddr: Address = addr.into();
 
-        let bytes = pack_udp(saddr, buf).await?;
+//         let bytes = pack_udp(saddr, buf).await?;
 
-        let addr = { *self.2.read() };
-        Ok(if let Some(addr) = addr {
-            self.0.send_to(&bytes, addr.into()).await?
-        } else {
-            0
-        })
-    }
-}
+//         let addr = { *self.2.read() };
+//         Ok(if let Some(addr) = addr {
+//             self.0.send_to(&bytes, addr.into()).await?
+//         } else {
+//             0
+//         })
+//     }
+// }
 
 pub struct Socks5 {
     server: Socks5Server,

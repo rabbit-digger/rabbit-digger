@@ -1,9 +1,14 @@
-use std::net::SocketAddr;
+use std::{
+    net::SocketAddr,
+    pin::Pin,
+    task::{self, Poll},
+};
 
 use super::service::ReverseLookup;
+use futures::{ready, Stream, StreamExt};
 use rd_interface::{
-    async_trait, context::common_field::DestDomain, Address, AddressDomain, Context, INet,
-    IUdpSocket, IntoDyn, Net, Result, UdpSocket,
+    async_trait, context::common_field::DestDomain, impl_sink, Address, AddressDomain, BytesMut,
+    Context, INet, IUdpSocket, IntoDyn, Net, Result, UdpSocket,
 };
 
 /// This net is used for reverse lookup.
@@ -72,21 +77,29 @@ impl INet for DNSNet {
 
 struct MitmUdp(UdpSocket, ReverseLookup);
 
-#[async_trait]
-impl IUdpSocket for MitmUdp {
-    async fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, SocketAddr)> {
-        let (size, from_addr) = self.0.recv_from(buf).await?;
+impl Stream for MitmUdp {
+    type Item = std::io::Result<(BytesMut, SocketAddr)>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut task::Context) -> Poll<Option<Self::Item>> {
+        let this = &mut *self;
+        let (data, from_addr) = match ready!(this.0.poll_next_unpin(cx)) {
+            Some(r) => r?,
+            None => return Poll::Ready(None),
+        };
+
         if from_addr.port() == 53 {
-            let packet = &buf[..size];
+            let packet = &data[..];
             self.1.record_packet(packet);
         }
-        Ok((size, from_addr))
-    }
 
-    async fn send_to(&self, buf: &[u8], addr: Address) -> Result<usize> {
-        self.0.send_to(buf, addr).await
+        Poll::Ready(Some(Ok((data, from_addr))))
     }
+}
 
+impl_sink!(MitmUdp, 0);
+
+#[async_trait]
+impl IUdpSocket for MitmUdp {
     async fn local_addr(&self) -> Result<SocketAddr> {
         self.0.local_addr().await
     }

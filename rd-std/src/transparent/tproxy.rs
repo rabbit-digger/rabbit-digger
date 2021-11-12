@@ -169,39 +169,41 @@ impl UdpTunnel {
     fn new(net: Net, src: SocketAddr, cache: Arc<TransparentUdpCache>) -> UdpTunnel {
         let (tx, mut rx) = unbounded_channel::<(SocketAddr, Vec<u8>)>();
         let handle = tokio::spawn(async move {
-            let udp = timeout(
-                Duration::from_secs(5),
-                net.udp_bind(
-                    &mut Context::from_socketaddr(src),
-                    &Address::any_addr_port(&src),
-                ),
-            )
-            .await
-            .map_err(map_other)??;
+            // TODO: udp
 
-            let send = async {
-                while let Some((addr, packet)) = rx.recv().await {
-                    udp.send_to(&packet, addr.into()).await?;
-                }
-                Ok(()) as Result<()>
-            };
-            let recv = async {
-                let mut buf = [0u8; UDP_BUFFER_SIZE];
-                loop {
-                    let (size, addr) = udp.recv_from(&mut buf).await?;
+            // let udp = timeout(
+            //     Duration::from_secs(5),
+            //     net.udp_bind(
+            //         &mut Context::from_socketaddr(src),
+            //         &Address::any_addr_port(&src),
+            //     ),
+            // )
+            // .await
+            // .map_err(map_other)??;
 
-                    cache.send_to(addr, src, &buf[..size]).await?;
-                }
-            };
+            // let send = async {
+            //     while let Some((addr, packet)) = rx.recv().await {
+            //         udp.send_to(&packet, addr.into()).await?;
+            //     }
+            //     Ok(()) as Result<()>
+            // };
+            // let recv = async {
+            //     let mut buf = [0u8; UDP_BUFFER_SIZE];
+            //     loop {
+            //         let (size, addr) = udp.recv_from(&mut buf).await?;
 
-            let r: Result<()> = select! {
-                r = send => r,
-                r = recv => r,
-            };
+            //         cache.send_to(addr, src, &buf[..size]).await?;
+            //     }
+            // };
 
-            if let Err(e) = &r {
-                tracing::error!("tproxy error {:?}", e);
-            }
+            // let r: Result<()> = select! {
+            //     r = send => r,
+            //     r = recv => r,
+            // };
+
+            // if let Err(e) = &r {
+            //     tracing::error!("tproxy error {:?}", e);
+            // }
 
             Ok(()) as Result<()>
         });
