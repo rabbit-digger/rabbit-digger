@@ -117,10 +117,13 @@ impl<T: IServer> IntoDyn<Server> for T {
 }
 
 /// The other side of an UdpSocket
-#[async_trait]
-pub trait IUdpChannel: Send + Sync {
-    async fn recv_send_to(&self, data: &mut [u8]) -> Result<(usize, Address)>;
-    async fn send_recv_from(&self, data: &[u8], addr: SocketAddr) -> Result<usize>;
+pub trait IUdpChannel:
+    Stream<Item = io::Result<(Bytes, SocketAddr)>>
+    + Sink<(BytesMut, SocketAddr), Error = io::Error>
+    + Unpin
+    + Send
+    + Sync
+{
 }
 pub type UdpChannel = Box<dyn IUdpChannel>;
 
