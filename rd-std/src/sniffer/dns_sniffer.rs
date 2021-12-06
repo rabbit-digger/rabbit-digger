@@ -17,12 +17,12 @@ use rd_interface::{
 /// And the DNS response will be sent to the client.
 /// The tcp_connect to recorded IP will be recovered to domain name.
 /// If the domain name is in the cache, this net will add "DestDomain" to the context.
-pub struct DNSNet {
+pub struct DNSSnifferNet {
     net: Net,
     rl: ReverseLookup,
 }
 
-impl DNSNet {
+impl DNSSnifferNet {
     pub fn new(net: Net) -> Self {
         Self {
             net,
@@ -51,7 +51,7 @@ impl DNSNet {
 }
 
 #[async_trait]
-impl INet for DNSNet {
+impl INet for DNSSnifferNet {
     async fn tcp_connect(
         &self,
         ctx: &mut Context,
