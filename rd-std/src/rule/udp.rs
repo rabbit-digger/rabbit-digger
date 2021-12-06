@@ -61,7 +61,7 @@ impl Stream for UdpRuleSocket {
     }
 }
 
-async fn get_rule_and_bind(
+async fn send_first_packet(
     mut ctx: Context,
     bind_addr: Address,
     (bytes, addr): (Bytes, SocketAddr),
@@ -88,6 +88,7 @@ impl Sink<(Bytes, SocketAddr)> for UdpRuleSocket {
         cx: &mut task::Context<'_>,
     ) -> Poll<Result<(), Self::Error>> {
         match &mut self.state {
+            State::Binded(udp) => udp.poll_ready_unpin(cx),
             State::Idle { .. } => Poll::Ready(Ok(())),
             State::Binding(fut) => {
                 let udp = ready!(fut.lock().poll_unpin(cx));
@@ -95,7 +96,6 @@ impl Sink<(Bytes, SocketAddr)> for UdpRuleSocket {
                 self.notify.notify_one();
                 Poll::Ready(Ok(()))
             }
-            State::Binded(udp) => udp.poll_ready_unpin(cx),
         }
     }
 
@@ -107,7 +107,8 @@ impl Sink<(Bytes, SocketAddr)> for UdpRuleSocket {
                 bind_addr,
                 rule,
             } => {
-                self.state = State::Binding(Mutex::new(Box::pin(get_rule_and_bind(
+                // TODO: more efficient
+                self.state = State::Binding(Mutex::new(Box::pin(send_first_packet(
                     context.clone(),
                     bind_addr.clone(),
                     item,
