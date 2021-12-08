@@ -107,7 +107,7 @@ impl Sink<(Bytes, SocketAddr)> for UdpRuleSocket {
                 bind_addr,
                 rule,
             } => {
-                // TODO: more efficient
+                // TODO: more efficient, remove clone
                 self.state = State::Binding(Mutex::new(Box::pin(send_first_packet(
                     context.clone(),
                     bind_addr.clone(),

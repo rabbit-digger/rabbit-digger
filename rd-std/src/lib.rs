@@ -1,10 +1,10 @@
 use rd_interface::{Registry, Result};
 
 pub mod builtin;
-pub mod sniffer;
 pub mod http;
 pub mod mixed;
 pub mod rule;
+pub mod sniffer;
 pub mod socks5;
 pub mod transparent;
 pub mod util;
