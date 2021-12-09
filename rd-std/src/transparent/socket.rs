@@ -5,9 +5,11 @@ use std::{
     net::{SocketAddr, UdpSocket},
     os::unix::prelude::{AsRawFd, RawFd},
     ptr,
+    task::{Context, Poll},
 };
 
 use cfg_if::cfg_if;
+use futures::ready;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use tokio::{
     io::unix::AsyncFd,
@@ -232,6 +234,35 @@ impl AsRawFd for TransparentUdp {
 }
 
 impl TransparentUdp {
+    pub fn poll_send_to(
+        &self,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+        target: SocketAddr,
+    ) -> Poll<io::Result<usize>> {
+        loop {
+            let mut guard = ready!(self.0.poll_write_ready(cx))?;
+
+            match guard.try_io(|inner| inner.get_ref().send_to(buf, target)) {
+                Ok(result) => return Poll::Ready(result),
+                Err(_would_block) => continue,
+            }
+        }
+    }
+    pub fn poll_recv(
+        &self,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<(usize, SocketAddr, SocketAddr)>> {
+        loop {
+            let mut guard = ready!(self.0.poll_read_ready(cx))?;
+
+            match guard.try_io(|inner| recv_dest_from(inner.get_ref(), buf)) {
+                Ok(result) => return Poll::Ready(result),
+                Err(_) => continue,
+            }
+        }
+    }
     pub async fn listen(addr: SocketAddr) -> io::Result<TransparentUdp> {
         create_udp_socket(addr, false, None).await
     }
