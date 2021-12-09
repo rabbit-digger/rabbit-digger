@@ -9,20 +9,14 @@ use std::{
 
 use futures::{ready, Future, FutureExt, Sink, SinkExt, Stream, StreamExt};
 use parking_lot::Mutex;
-use rd_interface::{async_trait, Address, Bytes, BytesMut, Context, IUdpSocket, Result, UdpSocket};
+use rd_interface::{async_trait, Bytes, BytesMut, IUdpSocket, Result, UdpSocket};
 use tokio::{pin, sync::Notify, time::timeout};
 
 type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
-type Connector = Box<
-    dyn FnOnce(&mut Context, &Address, &(Bytes, SocketAddr)) -> BoxFuture<Result<UdpSocket>> + Send,
->;
+type Connector = Box<dyn FnOnce(&(Bytes, SocketAddr)) -> BoxFuture<Result<UdpSocket>> + Send>;
 
 enum State {
-    Idle {
-        ctx: Context,
-        bind_addr: Address,
-        connector: Mutex<Option<Connector>>,
-    },
+    Idle { connector: Mutex<Option<Connector>> },
     Binding(Mutex<BoxFuture<Result<UdpSocket>>>),
     Binded(UdpSocket),
     // Dummy state for replace
@@ -36,12 +30,10 @@ pub struct UdpConnector {
 }
 
 impl UdpConnector {
-    pub fn new(ctx: Context, bind_addr: Address, connector: Connector) -> Self {
+    pub fn new(connector: Connector) -> Self {
         UdpConnector {
             notify: Notify::new(),
             state: State::Idle {
-                ctx,
-                bind_addr,
                 connector: Mutex::new(Some(connector)),
             },
         }
@@ -66,17 +58,8 @@ impl Stream for UdpConnector {
     }
 }
 
-async fn send_first_packet(
-    mut ctx: Context,
-    bind_addr: Address,
-    connector: Connector,
-    item: (Bytes, SocketAddr),
-) -> Result<UdpSocket> {
-    let mut udp = timeout(
-        Duration::from_secs(5),
-        connector(&mut ctx, &bind_addr, &item),
-    )
-    .await??;
+async fn send_first_packet(connector: Connector, item: (Bytes, SocketAddr)) -> Result<UdpSocket> {
+    let mut udp = timeout(Duration::from_secs(5), connector(&item)).await??;
 
     udp.send(item).await?;
 
@@ -110,15 +93,9 @@ impl Sink<(Bytes, SocketAddr)> for UdpConnector {
         let old_state = replace(&mut self.state, State::Dummy);
 
         self.state = match old_state {
-            State::Idle {
-                ctx,
-                bind_addr,
-                connector,
-            } => {
+            State::Idle { connector } => {
                 result = Ok(());
                 State::Binding(Mutex::new(Box::pin(send_first_packet(
-                    ctx,
-                    bind_addr,
                     connector
                         .lock()
                         .take()
