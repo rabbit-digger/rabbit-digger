@@ -10,27 +10,29 @@ use std::{
 use self::connection::UdpConnection;
 use futures::{ready, Future, Sink, SinkExt, Stream, StreamExt};
 use lru_time_cache::LruCache;
-use rd_interface::{Bytes, BytesMut, Net};
+use rd_interface::{Bytes, Net};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 mod connection;
 mod send_back;
 
 #[derive(Debug)]
-pub(super) struct UdpPacket {
-    pub(super) from: SocketAddr,
-    pub(super) to: SocketAddr,
-    pub(super) data: Bytes,
+pub struct UdpPacket {
+    pub from: SocketAddr,
+    pub to: SocketAddr,
+    pub data: Bytes,
+}
+
+impl UdpPacket {
+    pub fn new(data: Bytes, from: SocketAddr, to: SocketAddr) -> Self {
+        UdpPacket { from, to, data }
+    }
 }
 
 // Stream: (data, from, to)
 // Sink: (data, to, from)
 pub trait RawUdpSource:
-    Stream<Item = io::Result<(Bytes, SocketAddr, SocketAddr)>>
-    + Sink<(BytesMut, SocketAddr, SocketAddr), Error = io::Error>
-    + Unpin
-    + Send
-    + Sync
+    Stream<Item = io::Result<UdpPacket>> + Sink<UdpPacket, Error = io::Error> + Unpin + Send + Sync
 {
 }
 
@@ -79,7 +81,7 @@ where
                 None => return task::Poll::Ready(Ok(())),
             };
 
-            let (data, from, to) = item?;
+            let UdpPacket { data, from, to } = item?;
             let udp = self.get(from);
             if let Err(e) = udp.send((data, to)) {
                 tracing::warn!("udp send buffer full. {:?}", e);
@@ -91,9 +93,8 @@ where
             match &self.buf {
                 Some(_) => {
                     ready!(self.s.poll_ready_unpin(cx))?;
-                    let UdpPacket { from, to, data } = replace(&mut self.buf, None).unwrap();
-                    self.s
-                        .start_send_unpin((BytesMut::from(&data[..]), from, to))?;
+                    let packet = replace(&mut self.buf, None).unwrap();
+                    self.s.start_send_unpin(packet)?;
                 }
                 None => {
                     let packet = match ready!(self.recv_back.poll_recv(cx)) {

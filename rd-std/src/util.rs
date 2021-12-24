@@ -6,6 +6,6 @@ pub use udp_connector::UdpConnector;
 
 mod connect_tcp;
 mod connect_udp;
-mod forward_udp;
+pub mod forward_udp;
 mod tcp_channel;
 mod udp_connector;

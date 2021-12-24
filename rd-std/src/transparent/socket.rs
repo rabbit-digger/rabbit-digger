@@ -62,7 +62,7 @@ pub async fn create_tcp_listener(addr: SocketAddr) -> io::Result<TcpListener> {
 pub struct TransparentUdp(AsyncFd<UdpSocket>);
 
 // https://github.com/shadowsocks/shadowsocks-rust/blob/0433b3ec09bcaa26f7460a50287b56c67b687a34/crates/shadowsocks-service/src/local/redir/udprelay/sys/unix/linux.rs#L56
-async fn create_udp_socket(
+fn create_udp_socket(
     addr: SocketAddr,
     reuse_port: bool,
     mark: Option<u32>,
@@ -263,33 +263,15 @@ impl TransparentUdp {
             }
         }
     }
-    pub async fn listen(addr: SocketAddr) -> io::Result<TransparentUdp> {
-        create_udp_socket(addr, false, None).await
+    pub fn listen(addr: SocketAddr) -> io::Result<TransparentUdp> {
+        create_udp_socket(addr, false, None)
     }
-    pub async fn bind_any(addr: SocketAddr, mark: Option<u32>) -> io::Result<TransparentUdp> {
-        let socket = create_udp_socket(addr, true, mark).await?;
+    pub fn bind_any(addr: SocketAddr, mark: Option<u32>) -> io::Result<TransparentUdp> {
+        let socket = create_udp_socket(addr, true, mark)?;
 
         Ok(socket)
     }
-    pub async fn connect(&self, addr: SocketAddr) -> io::Result<()> {
+    pub fn connect(&self, addr: SocketAddr) -> io::Result<()> {
         self.0.get_ref().connect(addr)
-    }
-    pub async fn recv(&self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr, SocketAddr)> {
-        loop {
-            let mut guard = self.0.readable().await?;
-            match guard.try_io(|inner| recv_dest_from(inner.get_ref(), buf)) {
-                Ok(result) => return result,
-                Err(_) => continue,
-            }
-        }
-    }
-    pub async fn send_to(&self, buf: &[u8], target: SocketAddr) -> io::Result<usize> {
-        loop {
-            let mut write_guard = self.0.writable().await?;
-            match write_guard.try_io(|inner| inner.get_ref().send_to(buf, target)) {
-                Ok(result) => return result,
-                Err(_) => continue,
-            }
-        }
     }
 }
