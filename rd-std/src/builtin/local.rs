@@ -1,7 +1,6 @@
 use std::{
     io,
     net::{IpAddr, SocketAddr},
-    task::Poll,
     time::Duration,
 };
 

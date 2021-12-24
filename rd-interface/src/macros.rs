@@ -83,7 +83,7 @@ macro_rules! impl_stream {
             fn poll_next(
                 mut self: ::std::pin::Pin<&mut Self>,
                 cx: &mut ::std::task::Context<'_>,
-            ) -> Poll<Option<Self::Item>> {
+            ) -> ::std::task::Poll<Option<Self::Item>> {
                 ::rd_interface::Stream::poll_next(::std::pin::Pin::new(&mut self.$f), cx)
             }
         }
