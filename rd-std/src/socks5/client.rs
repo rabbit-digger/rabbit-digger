@@ -11,6 +11,7 @@ use rd_interface::{
     IntoAddress, IntoDyn, Net, Result, TcpStream, UdpSocket, NOT_IMPLEMENTED,
 };
 use std::{
+    io,
     net::SocketAddr,
     pin::Pin,
     task::{self, Poll},
@@ -29,7 +30,7 @@ impl_async_read_write!(Socks5TcpStream, 0);
 pub struct Socks5UdpSocket(UdpSocket, TcpStream, SocketAddr);
 
 impl Stream for Socks5UdpSocket {
-    type Item = std::io::Result<(BytesMut, SocketAddr)>;
+    type Item = io::Result<(BytesMut, SocketAddr)>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         // 259 is max size of address, atype 1 + domain len 1 + domain 255 + port 2
@@ -53,7 +54,7 @@ impl Stream for Socks5UdpSocket {
 }
 
 impl Sink<(Bytes, SocketAddr)> for Socks5UdpSocket {
-    type Error = std::io::Error;
+    type Error = io::Error;
 
     fn poll_ready(
         mut self: Pin<&mut Self>,

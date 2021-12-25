@@ -28,6 +28,7 @@ impl UdpConnection {
             let udp = net
                 .udp_bind(&mut ctx, &bind_addr.to_any_addr_port()?)
                 .await?;
+
             connect_udp(&mut ctx, back_channel, udp).await?;
 
             Ok(())

@@ -124,13 +124,17 @@ impl Sink<(Bytes, SocketAddr)> for UdpConnector {
         mut self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
     ) -> Poll<Result<(), Self::Error>> {
-        match &mut self.state {
-            State::Binded(udp) => udp.poll_flush_unpin(cx),
-            State::Idle { .. } | State::Binding(_) => Poll::Ready(Err(io::Error::new(
-                io::ErrorKind::Other,
-                "udp connector not ready",
-            ))),
-            State::Dummy => unreachable!(),
+        loop {
+            match &mut self.state {
+                State::Binded(udp) => return udp.poll_flush_unpin(cx),
+                State::Binding(fut) => {
+                    let udp = ready!(fut.lock().poll_unpin(cx));
+                    self.state = State::Binded(udp?);
+                    self.notify.notify_one()
+                }
+                State::Idle { .. } => return Poll::Ready(Ok(())),
+                State::Dummy => unreachable!(),
+            }
         }
     }
 
