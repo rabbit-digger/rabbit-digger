@@ -1,6 +1,6 @@
 // UDP: https://github.com/shadowsocks/shadowsocks-rust/blob/0433b3ec09bcaa26f7460a50287b56c67b687a34/crates/shadowsocks-service/src/local/redir/udprelay/sys/unix/linux.rs#L56
 
-use std::{io, mem::replace, net::SocketAddr, pin::Pin, task, time::Duration};
+use std::{io, net::SocketAddr, pin::Pin, task, time::Duration};
 
 use super::socket::{create_tcp_listener, TransparentUdp};
 use crate::{
@@ -17,7 +17,7 @@ use rd_interface::{
     constant::UDP_BUFFER_SIZE,
     registry::ServerFactory,
     schemars::{self, JsonSchema},
-    Address, BytesMut, Context, IServer, IntoAddress, IntoDyn, Net, Result,
+    Address, Bytes, Context, IServer, IntoAddress, IntoDyn, Net, Result,
 };
 use serde::Deserialize;
 use tokio::{
@@ -98,13 +98,14 @@ impl ServerFactory for TProxyServer {
     }
 }
 
+#[derive(Debug)]
 enum SendState {
     Idle,
     Sending(UdpPacket),
 }
 
 struct UdpSource {
-    recv_buf: BytesMut,
+    recv_buf: Box<[u8]>,
     tudp: TransparentUdp,
 
     mark: Option<u32>,
@@ -115,7 +116,7 @@ struct UdpSource {
 impl UdpSource {
     fn new(tudp: TransparentUdp, mark: Option<u32>) -> Self {
         UdpSource {
-            recv_buf: BytesMut::with_capacity(UDP_BUFFER_SIZE),
+            recv_buf: Box::new([0; UDP_BUFFER_SIZE]),
             tudp,
             mark,
             cache: LruCache::with_expiry_duration_and_capacity(Duration::from_secs(30), 128),
@@ -126,6 +127,8 @@ impl UdpSource {
         let UdpSource {
             cache, send_state, ..
         } = self;
+
+        tracing::debug!("poll_send_to {:?}", send_state);
 
         match send_state {
             SendState::Idle => {}
@@ -159,17 +162,15 @@ impl Stream for UdpSource {
         self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
     ) -> task::Poll<Option<Self::Item>> {
-        let UdpSource {
-            recv_buf: buf,
-            tudp,
-            ..
-        } = self.get_mut();
-        let (size, from, to) = ready!(tudp.poll_recv(cx, &mut buf[..]))?;
-        buf.truncate(size);
+        let UdpSource { recv_buf, tudp, .. } = self.get_mut();
+        let (size, from, to) = ready!(tudp.poll_recv(cx, &mut recv_buf[..]))?;
 
-        let out_buf = replace(buf, BytesMut::with_capacity(UDP_BUFFER_SIZE));
-
-        Some(Ok(UdpPacket::new(out_buf.freeze(), from, to))).into()
+        Some(Ok(UdpPacket::new(
+            Bytes::copy_from_slice(&recv_buf[..size]),
+            from,
+            to,
+        )))
+        .into()
     }
 }
 

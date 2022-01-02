@@ -43,6 +43,7 @@ struct ForwardUdp<S> {
     send_back: Sender<UdpPacket>,
     recv_back: Receiver<UdpPacket>,
     buf: Option<UdpPacket>,
+    is_flushing: bool,
 }
 
 impl<S> ForwardUdp<S>
@@ -58,6 +59,7 @@ where
             send_back: tx,
             recv_back: rx,
             buf: None,
+            is_flushing: false,
         }
     }
 }
@@ -77,11 +79,11 @@ where
     fn poll_recv_packet(&mut self, cx: &mut task::Context<'_>) -> task::Poll<io::Result<()>> {
         loop {
             let item = match ready!(self.s.poll_next_unpin(cx)) {
-                Some(result) => result,
+                Some(result) => result?,
                 None => return task::Poll::Ready(Ok(())),
             };
 
-            let UdpPacket { data, from, to } = item?;
+            let UdpPacket { data, from, to } = item;
             let udp = self.get(from);
             if let Err(e) = udp.send((data, to)) {
                 tracing::warn!("udp send buffer full. {:?}", e);
@@ -90,11 +92,16 @@ where
     }
     fn poll_send_back(&mut self, cx: &mut task::Context<'_>) -> task::Poll<io::Result<()>> {
         loop {
+            if self.is_flushing {
+                ready!(self.s.poll_flush_unpin(cx)?);
+                self.is_flushing = false;
+            }
             match &self.buf {
                 Some(_) => {
                     ready!(self.s.poll_ready_unpin(cx))?;
                     let packet = replace(&mut self.buf, None).unwrap();
                     self.s.start_send_unpin(packet)?;
+                    self.is_flushing = true;
                 }
                 None => {
                     let packet = match ready!(self.recv_back.poll_recv(cx)) {
