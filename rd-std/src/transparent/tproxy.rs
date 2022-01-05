@@ -128,8 +128,6 @@ impl UdpSource {
             cache, send_state, ..
         } = self;
 
-        tracing::debug!("poll_send_to {:?}", send_state);
-
         match send_state {
             SendState::Idle => {}
             SendState::Sending(UdpPacket { from, to, data }) => {
@@ -198,9 +196,9 @@ impl Sink<UdpPacket> for UdpSource {
 
     fn poll_close(
         self: Pin<&mut Self>,
-        _cx: &mut task::Context<'_>,
+        cx: &mut task::Context<'_>,
     ) -> task::Poll<Result<(), Self::Error>> {
-        Ok(()).into()
+        self.poll_flush(cx)
     }
 }
 
