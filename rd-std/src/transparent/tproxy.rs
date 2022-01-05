@@ -8,6 +8,7 @@ use crate::{
     util::{
         connect_tcp,
         forward_udp::{forward_udp, RawUdpSource, UdpPacket},
+        is_reserved,
     },
 };
 use futures::{ready, Sink, Stream};
@@ -143,6 +144,11 @@ impl UdpSource {
                 };
 
                 ready!(udp.poll_send_to(cx, data, *to))?;
+
+                // Don't cache reserved address
+                if is_reserved(from.ip()) {
+                    cache.remove(&from);
+                }
             }
         }
 
