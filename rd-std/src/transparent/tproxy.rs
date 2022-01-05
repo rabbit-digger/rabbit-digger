@@ -135,7 +135,6 @@ impl UdpSource {
                     Some(udp) => udp,
                     None => {
                         let udp = TransparentUdp::bind_any(*from, self.mark)?;
-                        udp.connect(*to)?;
                         cache.insert(*from, udp);
                         cache
                             .get(&from)

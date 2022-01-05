@@ -13,6 +13,7 @@ use tokio::{net, time::timeout};
 use tokio_util::{codec::BytesCodec, udp::UdpFramed};
 use tracing::instrument;
 
+/// A local network.
 #[rd_config]
 #[derive(Debug, Clone, Default)]
 pub struct LocalNetConfig {

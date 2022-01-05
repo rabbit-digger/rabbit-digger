@@ -1,14 +1,8 @@
-use crate::{
-    interface::{
-        async_trait, AsyncRead, AsyncWrite, INet, ITcpStream, Net, TcpListener, TcpStream,
-        UdpSocket,
-    },
-    Address, Context, Result,
-};
+use rd_interface::{async_trait, AsyncRead, AsyncWrite, ITcpStream, Result, TcpStream};
 use std::{
     collections::VecDeque,
     io,
-    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
+    net::SocketAddr,
     pin::Pin,
     task::{self, Poll},
 };
@@ -109,57 +103,4 @@ impl PeekableTcpStream {
     pub fn into_inner(self) -> (TcpStream, VecDeque<u8>) {
         (self.tcp, self.buf)
     }
-}
-
-/// A no-op Net returns [`Error::NotImplemented`](crate::Error::NotImplemented) for every method.
-pub struct NotImplementedNet;
-
-#[async_trait]
-impl INet for NotImplementedNet {}
-
-/// A new Net calls [`tcp_connect()`](crate::INet::tcp_connect()), [`tcp_bind()`](crate::INet::tcp_bind()), [`udp_bind()`](crate::INet::udp_bind()) from different Net.
-pub struct CombineNet {
-    pub tcp_connect: Net,
-    pub tcp_bind: Net,
-    pub udp_bind: Net,
-    pub lookup_host: Net,
-}
-
-#[async_trait]
-impl INet for CombineNet {
-    async fn tcp_connect(&self, ctx: &mut Context, addr: &Address) -> Result<TcpStream> {
-        self.tcp_connect.tcp_connect(ctx, addr).await
-    }
-
-    async fn tcp_bind(&self, ctx: &mut Context, addr: &Address) -> Result<TcpListener> {
-        self.tcp_bind.tcp_bind(ctx, addr).await
-    }
-
-    async fn udp_bind(&self, ctx: &mut Context, addr: &Address) -> Result<UdpSocket> {
-        self.udp_bind.udp_bind(ctx, addr).await
-    }
-
-    async fn lookup_host(&self, addr: &Address) -> Result<Vec<SocketAddr>> {
-        self.lookup_host.lookup_host(addr).await
-    }
-}
-
-/// Helper function for converting IPv4 mapped IPv6 address
-///
-/// This is the same as `Ipv6Addr::to_ipv4_mapped`, but it is still unstable in the current libstd
-fn to_ipv4_mapped(ipv6: &Ipv6Addr) -> Option<Ipv4Addr> {
-    match ipv6.octets() {
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, a, b, c, d] => Some(Ipv4Addr::new(a, b, c, d)),
-        _ => None,
-    }
-}
-
-pub fn resolve_mapped_socket_addr(addr: SocketAddr) -> SocketAddr {
-    if let SocketAddr::V6(ref a) = addr {
-        if let Some(v4) = to_ipv4_mapped(a.ip()) {
-            return SocketAddr::new(v4.into(), a.port());
-        }
-    }
-
-    addr
 }

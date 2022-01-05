@@ -271,7 +271,4 @@ impl TransparentUdp {
 
         Ok(socket)
     }
-    pub fn connect(&self, addr: SocketAddr) -> io::Result<()> {
-        self.0.get_ref().connect(addr)
-    }
 }
