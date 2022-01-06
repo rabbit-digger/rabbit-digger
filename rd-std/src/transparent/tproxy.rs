@@ -132,13 +132,13 @@ impl UdpSource {
         match send_state {
             SendState::Idle => {}
             SendState::Sending(UdpPacket { from, to, data }) => {
-                let udp = match cache.get(&from) {
+                let udp = match cache.get(&to) {
                     Some(udp) => udp,
                     None => {
                         let udp = TransparentUdp::bind_any(*from, self.mark)?;
-                        cache.insert(*from, udp);
+                        cache.insert(*to, udp);
                         cache
-                            .get(&from)
+                            .get(&to)
                             .expect("impossible: failed to get by from_addr")
                     }
                 };
@@ -146,8 +146,8 @@ impl UdpSource {
                 ready!(udp.poll_send_to(cx, data, *to))?;
 
                 // Don't cache reserved address
-                if is_reserved(from.ip()) {
-                    cache.remove(&from);
+                if is_reserved(to.ip()) {
+                    cache.remove(&to);
                 }
             }
         }

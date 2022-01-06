@@ -7,19 +7,19 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_util::sync::PollSender;
 
 pub(super) struct BackChannel {
-    temp: SocketAddr,
+    to: SocketAddr,
     sender: PollSender<UdpPacket>,
     receiver: Receiver<(Bytes, SocketAddr)>,
 }
 
 impl BackChannel {
     pub(super) fn new(
-        temp: SocketAddr,
+        to: SocketAddr,
         sender: Sender<UdpPacket>,
         receiver: Receiver<(Bytes, SocketAddr)>,
     ) -> BackChannel {
         BackChannel {
-            temp,
+            to,
             sender: PollSender::new(sender),
             receiver,
         }
@@ -57,7 +57,7 @@ impl Sink<(BytesMut, SocketAddr)> for BackChannel {
         mut self: Pin<&mut Self>,
         (data, from): (BytesMut, SocketAddr),
     ) -> Result<(), Self::Error> {
-        let to = self.temp;
+        let to = self.to;
         self.sender
             .start_send_unpin(UdpPacket {
                 from,
