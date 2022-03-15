@@ -42,7 +42,7 @@ pub(super) trait Matcher: Send + Sync {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct MatchContext {
+pub struct MatchContext {
     address: Address,
     src_ip_addr: Option<IpAddr>,
     dest_socket_addr: Option<SocketAddr>,

@@ -36,10 +36,12 @@ atomic-shim = "0.2.0"
 dashmap = { version = "4.0.2", features = ["serde"] }
 indexmap = { version = "1.7.0", features = ["serde"] }
 tokio-stream = { version = "0.1.6", features = ["net", "sync", "time"] }
+vec-strings = { version = "0.4.6", features = ["serde"] }
 
 [dev-dependencies]
 rusty-hook = "0.11.0"
 tokio = { version = "1.5.0", features = ["macros"] }
+criterion = "0.3"
 
 [features]
 default = ["rd-std"]
@@ -55,3 +57,7 @@ panic = 'abort'
 [[bin]]
 name = "rabbit-digger"
 required-features = ["tracing-subscriber"]
+
+[[bench]]
+name = "rule"
+harness = false

@@ -3,8 +3,9 @@ pub mod config;
 mod domain;
 mod geoip;
 mod ipcidr;
-mod matcher;
-mod rule_net;
+pub mod matcher;
+pub mod rule_net;
+mod vecstr;
 
 use rd_interface::{registry::Builder, Net, Registry, Result};
 

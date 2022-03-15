@@ -1,6 +1,9 @@
 use std::{fmt, str::FromStr};
 
-use super::matcher::{self, MatchContext};
+use super::{
+    matcher::{self, MatchContext},
+    vecstr::VecStr,
+};
 use rd_interface::{
     config::{NetRef, SingleOrVec},
     impl_empty_config,
@@ -26,7 +29,7 @@ pub enum DomainMatcherMethod {
 #[derive(Debug, Clone)]
 pub struct DomainMatcher {
     pub method: DomainMatcherMethod,
-    pub domain: SingleOrVec<String>,
+    pub domain: VecStr,
 }
 
 #[derive(Debug, Clone, SerializeDisplay, DeserializeFromStr)]

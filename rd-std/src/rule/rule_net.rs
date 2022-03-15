@@ -23,7 +23,7 @@ pub struct Rule {
 }
 
 impl Rule {
-    fn new(config: config::RuleNetConfig) -> Result<Rule> {
+    pub fn new(config: config::RuleNetConfig) -> Result<Rule> {
         if config
             .rule
             .iter()
@@ -72,6 +72,15 @@ impl Rule {
         }
 
         tracing::trace!("Not matched");
+        Err(rd_interface::Error::NotMatched)
+    }
+    pub async fn match_rule(&self, match_context: &MatchContext) -> Result<(usize, &RuleItem)> {
+        for (i, rule) in self.rule.iter().enumerate() {
+            if rule.matcher.match_rule(match_context).await {
+                return Ok((i, &rule));
+            }
+        }
+
         Err(rd_interface::Error::NotMatched)
     }
 }
