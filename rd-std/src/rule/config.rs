@@ -4,6 +4,8 @@ use super::{
     matcher::{self, MatchContext},
     vecstr::VecStr,
 };
+use aho_corasick::AhoCorasick;
+use once_cell::sync::OnceCell;
 use rd_interface::{
     config::{NetRef, SingleOrVec},
     impl_empty_config,

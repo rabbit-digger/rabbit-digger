@@ -2,6 +2,7 @@ use std::convert::TryFrom;
 
 use super::config::{DomainMatcher, DomainMatcherMethod as Method};
 use super::matcher::{MatchContext, Matcher, MaybeAsync};
+use aho_corasick::AhoCorasickBuilder;
 use anyhow::Result;
 
 impl TryFrom<String> for Method {

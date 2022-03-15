@@ -1,15 +1,32 @@
 use rd_interface::{config::Config, prelude::*, registry::JsonSchema};
 use serde::{Deserialize, Serialize};
+use vec_strings::Strings;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MyStrings {
+    #[serde(flatten)]
+    inner: Strings,
+}
+
+impl JsonSchema for MyStrings {
+    fn schema_name() -> String {
+        "Strings".to_string()
+    }
+
+    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        gen.subschema_for::<Vec<String>>()
+    }
+}
 
 #[derive(JsonSchema, Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum VecStr {
     Single(String),
-    Vec(Vec<String>),
+    Vec(MyStrings),
 }
 
 impl VecStr {
-    pub fn iter(&self) -> impl Iterator<Item = &String> {
+    pub fn iter(&self) -> impl Iterator<Item = &str> {
         Iter {
             inner: self,
             index: 0,
@@ -18,14 +35,18 @@ impl VecStr {
     pub fn into_vec(self) -> Vec<String> {
         match self {
             VecStr::Single(t) => vec![t],
-            VecStr::Vec(v) => v,
+            VecStr::Vec(v) => v.inner.into_iter().map(|i| i.to_string()).collect(),
         }
     }
 }
 
 impl From<Vec<String>> for VecStr {
     fn from(x: Vec<String>) -> Self {
-        VecStr::Vec(x)
+        let mut r = Strings::new();
+        for i in x {
+            r.push(&i);
+        }
+        VecStr::Vec(MyStrings { inner: r })
     }
 }
 
@@ -45,7 +66,7 @@ pub struct Iter<'a> {
 }
 
 impl<'a> Iterator for Iter<'a> {
-    type Item = &'a String;
+    type Item = &'a str;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.inner {
@@ -58,7 +79,7 @@ impl<'a> Iterator for Iter<'a> {
                 }
             }
             VecStr::Vec(x) => {
-                let i = x.get(self.index);
+                let i = x.inner.get(self.index as u32);
                 self.index += 1;
                 i
             }
