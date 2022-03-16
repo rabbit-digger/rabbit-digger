@@ -3,12 +3,7 @@ use futures::FutureExt;
 use rabbit_digger::config::{self, Config};
 use rd_interface::{config::resolve_net, registry::NetGetter, Address, Context, IntoDyn};
 use rd_std::{
-    rule::{
-        config::{Matcher, RuleNetConfig},
-        domain::DomainMatcherInner,
-        matcher::MatchContext,
-        rule_net::Rule,
-    },
+    rule::{config::RuleNetConfig, matcher::MatchContext, rule_net::Rule},
     tests::TestNet,
 };
 use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
@@ -19,17 +14,7 @@ static GLOBAL: &StatsAlloc<std::alloc::System> = &INSTRUMENTED_SYSTEM;
 fn build_rule(s: &config::Net, getter: NetGetter) -> Rule {
     let mut config: RuleNetConfig = serde_json::from_value(s.opt.clone()).unwrap();
     resolve_net(&mut config, getter).unwrap();
-
-    let big_one = config.rule[1].clone();
     let rule = Rule::new(config).unwrap();
-
-    let reg = Region::new(&GLOBAL);
-    match *big_one.matcher {
-        Matcher::Domain(d) => DomainMatcherInner::debug(d, &GLOBAL),
-        _ => panic!("no"),
-    };
-    println!("new {:#?}", reg.change());
-
     rule
 }
 
