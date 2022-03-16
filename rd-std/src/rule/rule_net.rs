@@ -1,7 +1,7 @@
 use crate::{rule::matcher::MatchContext, util::UdpConnector};
 
-use super::config;
 use super::matcher::Matcher;
+use super::{config, matcher::MatcherBuilder};
 
 use lru_time_cache::LruCache;
 use parking_lot::Mutex;
@@ -13,7 +13,7 @@ use tracing::instrument;
 pub struct RuleItem {
     pub target_name: String,
     pub target: Net,
-    matcher: config::Matcher,
+    matcher: Box<dyn Matcher>,
 }
 
 #[derive(Clone)]
@@ -38,7 +38,7 @@ impl Rule {
             .into_iter()
             .map(|config::RuleItem { target, matcher }| {
                 Ok(RuleItem {
-                    matcher,
+                    matcher: matcher.build(),
                     target: (*target).clone(),
                     target_name: target.represent().to_string(),
                 })
@@ -59,14 +59,14 @@ impl Rule {
         // hit cache
         if let Some(i) = self.cache.lock().get(&match_context).copied() {
             let rule = &self.rule[i];
-            tracing::trace!(matcher = ?rule.matcher, hit_cache = true, "matched rule");
+            tracing::trace!(hit_cache = true, "matched rule");
             return Ok(rule);
         }
 
         for (i, rule) in self.rule.iter().enumerate() {
             if rule.matcher.match_rule(&match_context).await {
                 self.cache.lock().insert(match_context, i);
-                tracing::trace!(matcher = ?rule.matcher, hit_cache = false, "matched rule");
+                tracing::trace!(hit_cache = false, "matched rule");
                 return Ok(&rule);
             }
         }

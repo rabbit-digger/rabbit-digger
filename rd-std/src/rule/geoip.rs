@@ -1,8 +1,8 @@
 use std::io::Read;
 use std::net::IpAddr;
 
-use super::config::GeoIpMatcher;
 use super::matcher::{MatchContext, Matcher, MaybeAsync};
+use super::{config::GeoIpMatcher, matcher::MatcherBuilder};
 use flate2::read::GzDecoder;
 use maxminddb::geoip2;
 use once_cell::sync::OnceCell;
@@ -56,6 +56,12 @@ impl GeoIpMatcher {
                 false
             }
         }
+    }
+}
+
+impl MatcherBuilder for GeoIpMatcher {
+    fn build(&self) -> Box<dyn Matcher> {
+        Box::new(self.clone())
     }
 }
 

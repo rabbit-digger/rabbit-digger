@@ -1,11 +1,20 @@
-use super::config::{IpCidrMatcher, SrcIpCidrMatcher};
 use super::matcher::{MatchContext, Matcher, MaybeAsync};
+use super::{
+    config::{IpCidrMatcher, SrcIpCidrMatcher},
+    matcher::MatcherBuilder,
+};
 use smoltcp::wire::IpAddress;
 
 impl IpCidrMatcher {
     fn test(&self, address: impl Into<IpAddress>) -> bool {
         let address: IpAddress = address.into();
         self.ipcidr.iter().any(|i| i.0.contains_addr(&address))
+    }
+}
+
+impl MatcherBuilder for IpCidrMatcher {
+    fn build(&self) -> Box<dyn Matcher> {
+        Box::new(self.clone())
     }
 }
 
@@ -23,6 +32,12 @@ impl SrcIpCidrMatcher {
     fn test(&self, address: impl Into<IpAddress>) -> bool {
         let address: IpAddress = address.into();
         self.ipcidr.iter().any(|i| i.0.contains_addr(&address))
+    }
+}
+
+impl MatcherBuilder for SrcIpCidrMatcher {
+    fn build(&self) -> Box<dyn Matcher> {
+        Box::new(self.clone())
     }
 }
 

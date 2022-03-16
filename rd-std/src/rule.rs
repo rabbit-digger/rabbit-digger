@@ -5,7 +5,6 @@ mod geoip;
 mod ipcidr;
 pub mod matcher;
 pub mod rule_net;
-mod vecstr;
 
 use rd_interface::{registry::Builder, Net, Registry, Result};
 

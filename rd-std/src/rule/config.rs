@@ -1,11 +1,6 @@
 use std::{fmt, str::FromStr};
 
-use super::{
-    matcher::{self, MatchContext},
-    vecstr::VecStr,
-};
-use aho_corasick::AhoCorasick;
-use once_cell::sync::OnceCell;
+use super::matcher;
 use rd_interface::{
     config::{NetRef, SingleOrVec},
     impl_empty_config,
@@ -31,7 +26,7 @@ pub enum DomainMatcherMethod {
 #[derive(Debug, Clone)]
 pub struct DomainMatcher {
     pub method: DomainMatcherMethod,
-    pub domain: VecStr,
+    pub domain: SingleOrVec<String>,
 }
 
 #[derive(Debug, Clone, SerializeDisplay, DeserializeFromStr)]
@@ -133,14 +128,14 @@ fn default_lru_cache_size() -> usize {
     32
 }
 
-impl matcher::Matcher for Matcher {
-    fn match_rule(&self, match_context: &MatchContext) -> matcher::MaybeAsync<bool> {
+impl matcher::MatcherBuilder for Matcher {
+    fn build(&self) -> Box<dyn matcher::Matcher> {
         match self {
-            Matcher::Domain(i) => i.match_rule(match_context),
-            Matcher::IpCidr(i) => i.match_rule(match_context),
-            Matcher::SrcIpCidr(i) => i.match_rule(match_context),
-            Matcher::GeoIp(i) => i.match_rule(match_context),
-            Matcher::Any(i) => i.match_rule(match_context),
+            Matcher::Domain(i) => i.build(),
+            Matcher::IpCidr(i) => i.build(),
+            Matcher::SrcIpCidr(i) => i.build(),
+            Matcher::GeoIp(i) => i.build(),
+            Matcher::Any(i) => i.build(),
         }
     }
 }

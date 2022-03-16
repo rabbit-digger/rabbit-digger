@@ -1,9 +1,15 @@
-use super::config::AnyMatcher;
 use super::matcher::{MatchContext, Matcher, MaybeAsync};
+use super::{config::AnyMatcher, matcher::MatcherBuilder};
 
 impl Matcher for AnyMatcher {
     fn match_rule(&self, _match_context: &MatchContext) -> MaybeAsync<bool> {
         true.into()
+    }
+}
+
+impl MatcherBuilder for AnyMatcher {
+    fn build(&self) -> Box<dyn Matcher> {
+        Box::new(self.clone())
     }
 }
 
