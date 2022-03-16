@@ -109,6 +109,15 @@ mod impl_std {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
     use std::path::PathBuf;
 
+    macro_rules! impl_pointer_config {
+        ($($x:ident),+ $(,)?) => ($(
+            impl<T: Config> Config for $x<T> {
+                fn visit(&mut self, ctx: &mut rd_interface::config::VisitorContext, visitor: &mut dyn rd_interface::config::Visitor) -> rd_interface::Result<()> {
+                    self.as_mut().visit(ctx, visitor)
+                }
+            }
+        )*)
+    }
     macro_rules! impl_container_config {
         ($($x:ident),+ $(,)?) => ($(
             impl<T: Config> Config for $x<T> {
@@ -144,6 +153,7 @@ mod impl_std {
     impl_empty_config! { PathBuf }
     impl_container_config! { Vec, Option, VecDeque, Result, LinkedList }
     impl_key_container_config! { HashMap, BTreeMap }
+    impl_pointer_config! { Box }
 
     impl<T1, T2> rd_interface::config::Config for (T1, T2) {
         fn visit(

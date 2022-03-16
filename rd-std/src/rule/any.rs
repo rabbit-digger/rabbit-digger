@@ -8,8 +8,8 @@ impl Matcher for AnyMatcher {
 }
 
 impl MatcherBuilder for AnyMatcher {
-    fn build(&self) -> Box<dyn Matcher> {
-        Box::new(self.clone())
+    fn build(self) -> Box<dyn Matcher> {
+        Box::new(self)
     }
 }
 

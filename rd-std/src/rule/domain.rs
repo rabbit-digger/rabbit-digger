@@ -1,4 +1,4 @@
-use std::convert::TryFrom;
+use std::{collections::BTreeMap, convert::TryFrom};
 
 use super::matcher::{MatchContext, Matcher, MaybeAsync};
 use super::{
@@ -7,11 +7,13 @@ use super::{
 };
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use anyhow::Result;
+use stats_alloc::{Region, StatsAlloc};
 
-struct DomainMatcherInner {
+pub struct DomainMatcherInner {
     method: Method,
-    domain: Vec<String>,
-    ac: AhoCorasick,
+    // domain: Vec<Box<[u8]>>,
+    is_prefix: BTreeMap<usize, bool>,
+    ac: AhoCorasick<u32>,
 }
 
 impl TryFrom<String> for Method {
@@ -28,44 +30,91 @@ impl TryFrom<String> for Method {
 }
 
 impl MatcherBuilder for DomainMatcher {
-    fn build(&self) -> Box<dyn Matcher> {
+    fn build(self) -> Box<dyn Matcher> {
         Box::new(DomainMatcherInner::new(self))
-    }
-}
-
-struct ReverseIter<'b, I>(I, &'b Vec<u8>);
-
-impl<'b, I> Iterator for ReverseIter<'b, I>
-where
-    I: Iterator<Item = &'b [u8]>,
-{
-    type Item = &'b [u8];
-
-    fn next(&mut self) -> Option<Self::Item> {
-        Some(&self.1[..])
+        // Box::new(self)
     }
 }
 
 impl DomainMatcherInner {
-    fn new(cfg: &DomainMatcher) -> Self {
-        let domain = cfg.domain.clone().into_vec();
+    pub fn debug(cfg: DomainMatcher, g: &StatsAlloc<std::alloc::System>) -> Self {
+        let mut reg = Region::new(g);
+
+        let mut is_prefix = BTreeMap::new();
+        let domain = cfg
+            .domain
+            .into_vec()
+            .into_iter()
+            .map(|i| i.into_bytes())
+            .map(|mut v| {
+                v.reverse();
+                v.into_boxed_slice()
+            })
+            .collect::<Vec<_>>();
+
+        println!("Domain #1 {:#?}", reg.change_and_reset());
+
         let without_plus = domain
             .iter()
-            .map(|i| i.strip_prefix("+.").unwrap_or(&i))
-            .map(|i| i.as_bytes())
-            .map(|b| {
-                let mut b = b.to_vec();
-                b.reverse();
-                b
-            });
+            .enumerate()
+            .inspect(|(id, i)| {
+                if i.ends_with(b".+") {
+                    is_prefix.insert(*id, true);
+                }
+            })
+            .map(|(_, i)| i.strip_suffix(b".+").unwrap_or(&i));
+
+        println!("Domain #2 {:#?}", reg.change_and_reset());
 
         let ac = AhoCorasickBuilder::new()
             .match_kind(MatchKind::LeftmostLongest)
-            .build(without_plus);
+            .prefilter(false)
+            .dense_depth(0)
+            .build_with_size(without_plus)
+            .unwrap();
+
+        println!("Domain #3 {:#?}", reg.change_and_reset());
 
         DomainMatcherInner {
-            method: cfg.method.clone(),
-            domain,
+            method: cfg.method,
+            // domain,
+            is_prefix,
+            ac,
+        }
+    }
+    pub fn new(cfg: DomainMatcher) -> Self {
+        let mut is_prefix = BTreeMap::new();
+        let domain = cfg
+            .domain
+            .into_vec()
+            .into_iter()
+            .map(|i| i.into_bytes())
+            .map(|mut v| {
+                v.reverse();
+                v.into_boxed_slice()
+            })
+            .collect::<Vec<_>>();
+
+        let without_plus = domain
+            .iter()
+            .enumerate()
+            .inspect(|(id, i)| {
+                if i.ends_with(b".+") {
+                    is_prefix.insert(*id, true);
+                }
+            })
+            .map(|(_, i)| i.strip_suffix(b".+").unwrap_or(&i));
+
+        let ac = AhoCorasickBuilder::new()
+            .match_kind(MatchKind::LeftmostLongest)
+            .prefilter(false)
+            .build_with_size(without_plus)
+            .unwrap();
+
+        DomainMatcherInner {
+            method: cfg.method,
+            // domain,
+            is_prefix,
             ac,
         }
     }
@@ -74,14 +123,15 @@ impl DomainMatcherInner {
         domain.reverse();
         let len = domain.len();
         for i in self.ac.find_iter(&domain) {
-            let p = &self.domain[i.pattern()];
+            // let p = &self.domain[i.pattern()];
+            let is_prefix = *self.is_prefix.get(&i.pattern()).unwrap_or(&false);
             match self.method {
                 Method::Keyword => return true,
                 Method::Suffix if i.start() == len => return true,
                 Method::Match if (i.start() == 0 && i.end() == len) => return true,
                 Method::Match
                     if (i.end() < len
-                        && (p.starts_with("+.") && domain[i.end()] == b'.')
+                        && (is_prefix && domain[i.end()] == b'.')
                         && i.start() == 0) =>
                 {
                     return true
@@ -151,13 +201,13 @@ mod tests {
 
     #[test]
     fn test_new() {
-        let inner = DomainMatcherInner::new(&DomainMatcher {
+        let inner = DomainMatcherInner::new(DomainMatcher {
             method: Method::Match,
             domain: vec!["+.google.com".to_string()].into(),
         });
         assert!(inner.test("google.com"));
 
-        let inner = DomainMatcherInner::new(&DomainMatcher {
+        let inner = DomainMatcherInner::new(DomainMatcher {
             method: Method::Match,
             domain: vec!["+.zzzzzz.me".to_string()].into(),
         });

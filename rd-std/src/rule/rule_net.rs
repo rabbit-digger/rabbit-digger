@@ -27,7 +27,7 @@ impl Rule {
         if config
             .rule
             .iter()
-            .find(|i| matches!(i.matcher, config::Matcher::GeoIp(_)))
+            .find(|i| matches!(*i.matcher, config::Matcher::GeoIp(_)))
             .is_some()
         {
             // if used geoip, init reader first.
@@ -150,11 +150,12 @@ mod tests {
                 config::RuleItem {
                     matcher: config::Matcher::GeoIp(config::GeoIpMatcher {
                         country: "CN".to_string(),
-                    }),
+                    })
+                    .into(),
                     target: NetRef::new_with_value("noop".into(), noop.clone()),
                 },
                 config::RuleItem {
-                    matcher: config::Matcher::Any(config::AnyMatcher {}),
+                    matcher: config::Matcher::Any(config::AnyMatcher {}).into(),
                     target: NetRef::new_with_value("test".into(), net.clone()),
                 },
             ],
@@ -202,7 +203,8 @@ mod tests {
             rule: vec![config::RuleItem {
                 matcher: config::Matcher::IpCidr(config::IpCidrMatcher {
                     ipcidr: vec!["127.0.0.1/32".parse().unwrap()].into(),
-                }),
+                })
+                .into(),
                 target: NetRef::new_with_value("net".into(), net.clone()),
             }],
             lru_cache_size: 10,
@@ -216,7 +218,8 @@ mod tests {
             rule: vec![config::RuleItem {
                 matcher: config::Matcher::SrcIpCidr(config::SrcIpCidrMatcher {
                     ipcidr: vec!["127.0.0.1/32".parse().unwrap()].into(),
-                }),
+                })
+                .into(),
                 target: NetRef::new_with_value("net".into(), net.clone()),
             }],
             lru_cache_size: 10,
@@ -244,7 +247,8 @@ mod tests {
                 matcher: config::Matcher::Domain(config::DomainMatcher {
                     method: config::DomainMatcherMethod::Match,
                     domain: vec!["localhost".to_string()].into(),
-                }),
+                })
+                .into(),
                 target: NetRef::new_with_value("net".into(), net.clone()),
             }],
             lru_cache_size: 10,

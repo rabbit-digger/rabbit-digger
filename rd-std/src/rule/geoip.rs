@@ -60,8 +60,8 @@ impl GeoIpMatcher {
 }
 
 impl MatcherBuilder for GeoIpMatcher {
-    fn build(&self) -> Box<dyn Matcher> {
-        Box::new(self.clone())
+    fn build(self) -> Box<dyn Matcher> {
+        Box::new(self)
     }
 }
 

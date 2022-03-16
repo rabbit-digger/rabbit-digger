@@ -38,7 +38,7 @@ impl<T: Unpin> Future for MaybeAsync<T> {
 }
 
 pub(super) trait MatcherBuilder {
-    fn build(&self) -> Box<dyn Matcher>;
+    fn build(self) -> Box<dyn Matcher>;
 }
 
 pub(super) trait Matcher: Send + Sync {

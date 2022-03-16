@@ -53,6 +53,8 @@ aho-corasick = "0.7"
 dns-parser = "0.8"
 trust-dns-resolver = { version = "0.20.4", optional = true }
 
+stats_alloc = "0.1.8"
+
 [dev-dependencies]
 tokio = { version = "1.5.0", features = ["full"] }
 

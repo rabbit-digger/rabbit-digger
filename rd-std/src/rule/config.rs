@@ -29,7 +29,7 @@ pub struct DomainMatcher {
     pub domain: SingleOrVec<String>,
 }
 
-#[derive(Debug, Clone, SerializeDisplay, DeserializeFromStr)]
+#[derive(Debug, SerializeDisplay, DeserializeFromStr, Clone)]
 pub struct IpCidr(pub wire::IpCidr);
 
 impl fmt::Display for IpCidr {
@@ -113,11 +113,11 @@ pub enum Matcher {
 pub struct RuleItem {
     pub target: NetRef,
     #[serde(flatten)]
-    pub matcher: Matcher,
+    pub matcher: Box<Matcher>,
 }
 
 #[rd_config]
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct RuleNetConfig {
     #[serde(default = "default_lru_cache_size")]
     pub lru_cache_size: usize,
@@ -129,7 +129,7 @@ fn default_lru_cache_size() -> usize {
 }
 
 impl matcher::MatcherBuilder for Matcher {
-    fn build(&self) -> Box<dyn matcher::Matcher> {
+    fn build(self) -> Box<dyn matcher::Matcher> {
         match self {
             Matcher::Domain(i) => i.build(),
             Matcher::IpCidr(i) => i.build(),

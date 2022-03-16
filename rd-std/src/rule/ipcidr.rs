@@ -13,8 +13,8 @@ impl IpCidrMatcher {
 }
 
 impl MatcherBuilder for IpCidrMatcher {
-    fn build(&self) -> Box<dyn Matcher> {
-        Box::new(self.clone())
+    fn build(self) -> Box<dyn Matcher> {
+        Box::new(self)
     }
 }
 
@@ -36,8 +36,8 @@ impl SrcIpCidrMatcher {
 }
 
 impl MatcherBuilder for SrcIpCidrMatcher {
-    fn build(&self) -> Box<dyn Matcher> {
-        Box::new(self.clone())
+    fn build(self) -> Box<dyn Matcher> {
+        Box::new(self)
     }
 }
 

@@ -1,6 +1,6 @@
 mod any;
 pub mod config;
-mod domain;
+pub mod domain;
 mod geoip;
 mod ipcidr;
 pub mod matcher;
