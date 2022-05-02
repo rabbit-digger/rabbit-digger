@@ -2,11 +2,20 @@ use hyper::{
     client::conn as client_conn, http, server::conn as server_conn, service::service_fn, Body,
     Method, Request, Response,
 };
-use rd_interface::{async_trait, Address, Context, IServer, IntoAddress, Net, Result, TcpStream};
-use std::net::SocketAddr;
+use parking_lot::Mutex;
+use rd_interface::{
+    async_trait, Address, AsyncRead, AsyncWrite, Context, IServer, ITcpStream, IntoAddress,
+    IntoDyn, Net, ReadBuf, Result, TcpStream,
+};
+use std::{
+    io,
+    net::SocketAddr,
+    pin::Pin,
+    task::{self, Poll},
+};
 use tracing::instrument;
 
-use crate::ContextExt;
+use crate::{context::AcceptCommand, ContextExt};
 
 #[derive(Clone)]
 pub struct HttpServer {
@@ -80,9 +89,18 @@ async fn proxy(net: Net, req: Request<Body>, addr: SocketAddr) -> anyhow::Result
             tokio::spawn(async move {
                 match hyper::upgrade::on(req).await {
                     Ok(upgraded) => {
-                        let mut ctx = Context::from_socketaddr(addr);
-                        let stream = net.tcp_connect(&mut ctx, &dst).await?;
-                        if let Err(e) = ctx.connect_tcp(stream, upgraded).await {
+                        if let Err(e) = Context::from_socketaddr(addr)
+                            .accept(
+                                async move {
+                                    Ok(AcceptCommand::TcpConnect(
+                                        dst,
+                                        Wrapper(Mutex::new(upgraded)).into_dyn().into(),
+                                    ))
+                                },
+                                &net,
+                            )
+                            .await
+                        {
                             tracing::debug!("tunnel io error: {}", e);
                         };
                     }
@@ -120,4 +138,40 @@ async fn proxy(net: Net, req: Request<Body>, addr: SocketAddr) -> anyhow::Result
 
 fn host_addr(uri: &http::Uri) -> Option<String> {
     uri.authority().map(|auth| auth.to_string())
+}
+
+struct Wrapper<T>(Mutex<T>);
+
+#[async_trait]
+impl<T> ITcpStream for Wrapper<T>
+where
+    T: AsyncRead + AsyncWrite + Send + Unpin,
+{
+    fn poll_read(
+        &mut self,
+        cx: &mut task::Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0.get_mut()).poll_read(cx, buf)
+    }
+
+    fn poll_write(&mut self, cx: &mut task::Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.0.get_mut()).poll_write(cx, buf)
+    }
+
+    fn poll_flush(&mut self, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0.get_mut()).poll_flush(cx)
+    }
+
+    fn poll_shutdown(&mut self, cx: &mut task::Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.0.get_mut()).poll_shutdown(cx)
+    }
+
+    async fn peer_addr(&self) -> Result<SocketAddr> {
+        Err(rd_interface::Error::NotImplemented)
+    }
+
+    async fn local_addr(&self) -> Result<SocketAddr> {
+        Err(rd_interface::Error::NotImplemented)
+    }
 }

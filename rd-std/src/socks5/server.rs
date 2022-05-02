@@ -1,10 +1,10 @@
 use super::common::{pack_udp, parse_udp, sa2ra};
-use crate::ContextExt;
-use anyhow::Context as AnyhowContext;
-use futures::ready;
+use crate::{context::AcceptCommand, ContextExt};
+use futures::{ready, FutureExt};
 use rd_interface::{
     async_trait, constant::UDP_BUFFER_SIZE, Address as RdAddr, Address as RDAddr, AsyncRead,
-    Context, IServer, IUdpChannel, IntoDyn, Net, ReadBuf, Result, TcpStream, UdpSocket,
+    Context, ErrorContext, IServer, IUdpChannel, IntoDyn, Net, ReadBuf, Result, TcpStream,
+    UdpSocket,
 };
 use socks5_protocol::{
     Address, AuthMethod, AuthRequest, AuthResponse, Command, CommandReply, CommandRequest,
@@ -34,7 +34,7 @@ impl Socks5Server {
     async fn handle_command_request(
         &self,
         mut socket: &mut BufWriter<TcpStream>,
-    ) -> anyhow::Result<CommandRequest> {
+    ) -> socks5_protocol::Result<CommandRequest> {
         let version = Version::read(&mut socket).await?;
         let auth_req = AuthRequest::read(&mut socket).await?;
 
@@ -54,40 +54,49 @@ impl Socks5Server {
         &self,
         mut socket: &mut BufWriter<TcpStream>,
         e: impl std::convert::TryInto<io::Error>,
-    ) -> anyhow::Result<()> {
-        CommandResponse::error(e).write(&mut socket).await?;
+    ) -> Result<()> {
+        CommandResponse::error(e)
+            .write(&mut socket)
+            .await
+            .map_err(|e| e.to_io_err())?;
         socket.flush().await?;
         return Ok(());
     }
-    #[instrument(err, skip(self, socket))]
-    pub async fn serve_connection(self, socket: TcpStream, addr: SocketAddr) -> anyhow::Result<()> {
+    async fn accept(&self, socket: TcpStream, addr: SocketAddr) -> Result<AcceptCommand> {
         let mut socket = BufWriter::with_capacity(512, socket);
 
         let default_addr: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0));
-        let Socks5ServerConfig { net, listen_net } = &*self.cfg;
+        let Socks5ServerConfig { listen_net, .. } = &*self.cfg;
         let local_ip = socket.get_ref().local_addr().await?.ip();
 
         let cmd_req = self
             .handle_command_request(&mut socket)
             .await
-            .context("handle command request")?;
+            .map_err(|e| e.to_io_err())?;
 
-        match cmd_req.command {
+        let cmd = match cmd_req.command {
             Command::Connect => {
                 let dst = sa2ra(cmd_req.address);
-                let ctx = &mut Context::from_socketaddr(addr);
-                let out = match net.tcp_connect(ctx, &dst).await {
-                    Ok(socket) => socket,
-                    Err(e) => return self.response_command_error(&mut socket, e).await,
-                };
 
-                let addr = out.local_addr().await.unwrap_or(default_addr).into();
-                CommandResponse::success(addr).write(&mut socket).await?;
-                socket.flush().await.context("command response")?;
+                AcceptCommand::TcpConnect(
+                    dst,
+                    (move |out: TcpStream| {
+                        async move {
+                            let addr = out.local_addr().await.unwrap_or(default_addr).into();
+                            CommandResponse::success(addr)
+                                .write(&mut socket)
+                                .await
+                                .map_err(|e| e.to_io_err())?;
+                            socket.flush().await.context("command response")?;
 
-                let socket = socket.into_inner();
+                            let socket = socket.into_inner();
 
-                ctx.connect_tcp(out, socket).await.context("connect tcp")?;
+                            Ok((out, socket))
+                        }
+                        .boxed()
+                    })
+                    .into(),
+                )
             }
             Command::UdpAssociate => {
                 let dst = match cmd_req.address {
@@ -95,17 +104,14 @@ impl Socks5Server {
                     _ => {
                         CommandResponse::reply_error(CommandReply::AddressTypeNotSupported)
                             .write(&mut socket)
-                            .await?;
+                            .await
+                            .map_err(|e| e.to_io_err())?;
 
                         socket.flush().await?;
-                        return Ok(());
+                        return Ok(AcceptCommand::Reject("Address type not supported".into()));
                     }
                 };
-                let ctx = &mut Context::from_socketaddr(addr);
-                let out = match net.udp_bind(ctx, &dst).await {
-                    Ok(socket) => socket,
-                    Err(e) => return self.response_command_error(&mut socket, e).await,
-                };
+
                 let udp = listen_net
                     .udp_bind(
                         &mut Context::from_socketaddr(addr),
@@ -116,12 +122,18 @@ impl Socks5Server {
                 // success
                 let udp_port = match udp.local_addr().await {
                     Ok(a) => a.port(),
-                    Err(e) => return self.response_command_error(&mut socket, e).await,
+                    Err(e) => {
+                        self.response_command_error(&mut socket, e).await?;
+                        return Ok(AcceptCommand::Reject("Failed to get bind address".into()));
+                    }
                 };
                 let addr: SocketAddr = (local_ip, udp_port).into();
                 let addr: Address = addr.into();
 
-                CommandResponse::success(addr).write(&mut socket).await?;
+                CommandResponse::success(addr)
+                    .write(&mut socket)
+                    .await
+                    .map_err(|e| e.to_io_err())?;
                 socket.flush().await.context("command response")?;
 
                 let udp_channel = Socks5UdpSocket {
@@ -130,14 +142,20 @@ impl Socks5Server {
                     endpoint: None,
                     send_buf: Vec::with_capacity(UDP_BUFFER_SIZE),
                 };
-                ctx.connect_udp(udp_channel.into_dyn(), out)
-                    .await
-                    .context("connect udp")?;
+
+                AcceptCommand::UdpBind(dst, udp_channel.into_dyn().into())
             }
-            _ => {
-                return Ok(());
-            }
+            _ => return Ok(AcceptCommand::Reject("Command not supported".into())),
         };
+
+        Ok(cmd)
+    }
+    #[instrument(err, skip(self, socket))]
+    pub async fn serve_connection(self, socket: TcpStream, addr: SocketAddr) -> anyhow::Result<()> {
+        let Socks5ServerConfig { net, .. } = &*self.cfg;
+        Context::from_socketaddr(addr)
+            .accept(self.accept(socket, addr), &net)
+            .await?;
 
         Ok(())
     }

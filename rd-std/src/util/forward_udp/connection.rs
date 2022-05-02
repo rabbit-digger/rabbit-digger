@@ -1,6 +1,6 @@
 use std::{io, net::SocketAddr};
 
-use crate::ContextExt;
+use crate::{context::AcceptCommand, ContextExt};
 
 use super::{send_back::BackChannel, UdpPacket};
 use rd_interface::{Address, Context, IntoDyn, Net, Result};
@@ -25,10 +25,12 @@ impl UdpConnection {
         let (send_udp, rx) = channel(channel_size);
         let back_channel = BackChannel::new(bind_from, send_back, rx).into_dyn();
         let fut = async move {
-            let mut ctx = Context::from_socketaddr(bind_from);
-            let udp = net.udp_bind(&mut ctx, &bind_addr).await?;
-
-            ctx.connect_udp(back_channel, udp).await?;
+            Context::from_socketaddr(bind_from)
+                .accept(
+                    async move { Ok(AcceptCommand::UdpBind(bind_addr, back_channel.into())) },
+                    &net,
+                )
+                .await?;
 
             Ok(())
         };

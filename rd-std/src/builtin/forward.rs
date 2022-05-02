@@ -5,7 +5,7 @@ use std::{
     task::{self, Poll},
 };
 
-use crate::ContextExt;
+use crate::{context::AcceptCommand, ContextExt};
 use futures::ready;
 use rd_interface::{
     async_trait, config::NetRef, prelude::*, registry::Builder, Address, Context, IServer,
@@ -75,9 +75,13 @@ impl ForwardServer {
         net: Net,
         addr: SocketAddr,
     ) -> Result<()> {
-        let ctx = &mut Context::from_socketaddr(addr);
-        let target = net.tcp_connect(ctx, &target).await?;
-        ctx.connect_tcp(socket, target).await?;
+        Context::from_socketaddr(addr)
+            .accept(
+                async move { Ok(AcceptCommand::TcpConnect(target, socket.into())) },
+                &net,
+            )
+            .await?;
+
         Ok(())
     }
     pub async fn serve_listener(&self, listener: TcpListener) -> Result<()> {
@@ -97,23 +101,25 @@ impl ForwardServer {
             pending::<()>().await;
         }
 
-        let udp_listener = ListenUdpChannel {
-            udp: self
-                .listen_net
-                .udp_bind(&mut Context::new(), &self.bind)
-                .await?,
-            client: None,
-            target: self.target.clone(),
-        }
-        .into_dyn();
+        let bind_addr = self.target.to_any_addr_port()?;
+        Context::new()
+            .accept(
+                async move {
+                    let udp_listener = ListenUdpChannel {
+                        udp: self
+                            .listen_net
+                            .udp_bind(&mut Context::new(), &self.bind)
+                            .await?,
+                        client: None,
+                        target: self.target.clone(),
+                    }
+                    .into_dyn();
 
-        let mut ctx = Context::new();
-        let udp = self
-            .net
-            .udp_bind(&mut ctx, &self.target.to_any_addr_port()?)
+                    Ok(AcceptCommand::UdpBind(bind_addr, udp_listener.into()))
+                },
+                &self.net,
+            )
             .await?;
-
-        ctx.connect_udp(udp_listener, udp).await?;
 
         Ok(())
     }
