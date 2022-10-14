@@ -11,7 +11,10 @@ use rd_interface::{
     async_trait, config::NetRef, prelude::*, registry::Builder, Address, Context, IServer,
     IUdpChannel, IntoDyn, Net, Result, Server, TcpListener, TcpStream, UdpSocket,
 };
-use tokio::select;
+use tokio::{
+    select,
+    time::{sleep, Duration},
+};
 use tracing::instrument;
 
 /// A server that forwards all connections to target.
@@ -97,25 +100,28 @@ impl ForwardServer {
             pending::<()>().await;
         }
 
-        let udp_listener = ListenUdpChannel {
-            udp: self
-                .listen_net
-                .udp_bind(&mut Context::new(), &self.bind)
-                .await?,
-            client: None,
-            target: self.target.clone(),
+        loop {
+            let udp_listener = ListenUdpChannel {
+                udp: self
+                    .listen_net
+                    .udp_bind(&mut Context::new(), &self.bind)
+                    .await?,
+                client: None,
+                target: self.target.clone(),
+            }
+            .into_dyn();
+
+            let mut ctx = Context::new();
+            let udp = self
+                .net
+                .udp_bind(&mut ctx, &self.target.to_any_addr_port()?)
+                .await?;
+
+            if let Err(e) = ctx.connect_udp(udp_listener, udp).await {
+                tracing::error!("udp failed, retry after 3s: {:?}", e);
+                sleep(Duration::from_secs(3)).await;
+            }
         }
-        .into_dyn();
-
-        let mut ctx = Context::new();
-        let udp = self
-            .net
-            .udp_bind(&mut ctx, &self.target.to_any_addr_port()?)
-            .await?;
-
-        ctx.connect_udp(udp_listener, udp).await?;
-
-        Ok(())
     }
 }
 
