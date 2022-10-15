@@ -25,6 +25,9 @@ pub struct ForwardServerConfig {
     target: Address,
     #[serde(default)]
     udp: bool,
+    /// must be IP:PORT
+    #[serde(default)]
+    udp_bind: Option<Address>,
     #[serde(default)]
     net: NetRef,
     #[serde(default)]
@@ -35,6 +38,7 @@ pub struct ForwardServer {
     listen_net: Net,
     net: Net,
     bind: Address,
+    udp_bind: Option<Address>,
     target: Address,
     udp: bool,
 }
@@ -45,6 +49,7 @@ impl ForwardServer {
             listen_net: cfg.listen.value_cloned(),
             net: cfg.net.value_cloned(),
             bind: cfg.bind,
+            udp_bind: cfg.udp_bind,
             target: cfg.target,
             udp: cfg.udp,
         }
@@ -112,10 +117,12 @@ impl ForwardServer {
             .into_dyn();
 
             let mut ctx = Context::new();
-            let udp = self
-                .net
-                .udp_bind(&mut ctx, &self.target.to_any_addr_port()?)
-                .await?;
+            let bind_addr = self
+                .udp_bind
+                .clone()
+                .map(Ok)
+                .unwrap_or_else(|| self.target.to_any_addr_port())?;
+            let udp = self.net.udp_bind(&mut ctx, &bind_addr).await?;
 
             if let Err(e) = ctx.connect_udp(udp_listener, udp).await {
                 tracing::error!("udp failed, retry after 3s: {:?}", e);
@@ -186,6 +193,7 @@ mod tests {
             listen_net: net.clone(),
             net: net.clone(),
             bind: "127.0.0.1:1234".into_address().unwrap(),
+            udp_bind: None,
             target: "127.0.0.1:4321".into_address().unwrap(),
             udp: true,
         };
